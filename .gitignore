@@ -1,10 +1,4 @@
-wxHexEditor
-c_96x96.bmp
-c_97x97.bmp
-mustang.bmp
-new_c96.bmp
-new_c97.bmp
-szary_mustang.bmp
-tux.bmp
-tux_gray.bmp
 .vscode
+backups
+wxHexEditor
+*.bmp

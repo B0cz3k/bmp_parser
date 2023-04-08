@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef uint16_t WORD;
 typedef uint32_t DWORD;
@@ -54,6 +55,17 @@ void read_info_header(FILE *fp, BITMAPINFOHEADER *bih) {
   fread(&bih->biYPelsPerMeter, sizeof(bih->biYPelsPerMeter), 1, fp);
   fread(&bih->biClrUsed, sizeof(bih->biClrUsed), 1, fp);
   fread(&bih->biClrImportant, sizeof(bih->biClrImportant), 1, fp);
+}
+
+
+unsigned char *read_pixel_data(FILE *fp, BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size) {
+// read bmp row by row
+  for (int i = 0; i < bih->biHeight; i++) {
+    fseek(fp, bfh->bfOffBits + i * row_size, SEEK_SET); // seek to the beginning of the current row
+    fread(&image[i * row_size], row_size, 1, fp); // read the current row
+  }
+
+  return image;
 }
 
 
@@ -140,7 +152,7 @@ void write_info_header(FILE *fp, BITMAPINFOHEADER *bih) {
 
 
 void write_pixels(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, FILE *fp, unsigned char *image, int row_size) {
-  // write to bmp row by row
+// write to bmp row by row
   for (int i = 0; i < bih->biHeight; i++) {
     fseek(fp, bfh->bfOffBits + i * row_size, SEEK_SET); // seek to the beginning of the current row
     fwrite(&image[i * row_size], row_size, 1, fp); // write the current row
@@ -148,7 +160,7 @@ void write_pixels(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, FILE *fp, unsign
 }
 
 
-void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size, const char* file) {
+void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size, const char *file) {
   FILE* gray_file = fopen(file, "wb");
   if(gray_file == NULL) {
     printf("Failed to create grayscale image\n");
@@ -156,7 +168,7 @@ void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *imag
   }
   unsigned char *gray_image = (unsigned char*) malloc(row_size * bih->biHeight); // allocate memory for the grayscale pixels
 
-  for(int i = 0; i < bih->biHeight; i++) { // modify the values of pixels
+  for(int i = 0; i < bih->biHeight; i++) { // modify pixel values
     for(int j = 0; j < bih->biWidth; j++) {
       gray_image[(i * row_size) + (j * 3)]  = (image[(i * row_size) + (j * 3)] + image[(i * row_size) + (j * 3) + 1] + image[(i * row_size) + (j * 3) + 2]) / 3; // blue
       gray_image[(i * row_size) + (j * 3) + 1]  = (image[(i * row_size) + (j * 3)] + image[(i * row_size) + (j * 3) + 1] + image[(i * row_size) + (j * 3) + 2]) / 3; // green
@@ -173,9 +185,55 @@ void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *imag
 }
 
 
+void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size, const char *file, char *message) {
+  FILE* encoded_file = fopen(file, "wb");
+  if(encoded_file == NULL) {
+    printf("Failed to create encoded file");
+    return;
+  }
+  printf("Message to encode: %s\n", message);
+
+// convert message to binary
+  unsigned char *bin_message = (unsigned char*) malloc((strlen(message) + 1) * 8); // allocate space for binary representation of the message WITH ITS SIZE AT THE FRONT
+
+  for(int i = 7; i >= 0; i--) { // encode the size in bits
+    bin_message[7 - i] = (((int) strlen(message)) >> i) & 1 ? '1' : '0'; // extract individual bits of the binary representation starting from the least significant bit
+  }
+  for(int i = 1; i <= strlen(message); i++) { // i is for every character inside message
+    int ascii = (int) message[i]; // change character into integer
+    for(int j = 7; j >= 0; j--) { // j is for each bit that might encode the character message[i]
+      bin_message[(i * 8) + (7 - j)] = (ascii >> j) & 1 ? '1' : '0'; 
+    }
+  }
+// encode the message
+  // write the headers
+  write_file_header(encoded_file, bfh); 
+  write_info_header(encoded_file, bih);
+  
+  // modify the pixel values 
+  for(int i = 0; i <= strlen(message); i++) {
+    for(int j = 0 ; j < 8; j++) { 
+      image[i + j] &= ~1; // set the least significant bit to zero
+      image[i + j] |= bin_message[(i * 8) + j]; // set the least significant bit
+    }
+  } 
+  // save changes
+  write_pixels(bfh, bih, encoded_file, image, row_size);
+  printf("Successfully encoded message: %s\n", message);
+  free(bin_message);
+  fclose(encoded_file);
+}
+
+
+void decode(unsigned char *pixels) {
+
+}
+
+
 int main(int argc, char *argv[]) {
-  char *in = argv[1]; // stores the path to input bmp file
-  char *out = argv[2]; // store the path to output bmp file
+  char *in = argv[1]; // stores the path to input bmp file / encoded bmp (to decode)
+  char *out = argv[2]; // store the path to output bmp file / path to encoded bmp file (to encode)
+  char *message = argv[3]; // message to be encoded
 
   FILE *fp;
   BITMAPFILEHEADER bfh;
@@ -188,35 +246,53 @@ int main(int argc, char *argv[]) {
   }
 
 // read and print file and info header
- read_file_header(fp, &bfh);
- read_info_header(fp, &bih);
- print_file_header(&bfh);
- print_info_header(&bih);
+  read_file_header(fp, &bfh);
+  read_info_header(fp, &bih);
+  print_file_header(&bfh);
+  print_info_header(&bih);
 
-// histogram
-  if ((bih.biCompression != 0) || (bih.biBitCount != 24)) {
-    printf("Histogram calculation is not supported for this image.");
-    return 1;
-  }
-
+// read pixel data
   int row_size = ((bih.biWidth * bih.biBitCount + 31) / 32) * 4; 
   unsigned char *image = (unsigned char*) malloc(row_size * bih.biHeight); // allocate space to load in pixel data
 
-  // read bmp row by row
-  for (int i = 0; i < bih.biHeight; i++) {
-    fseek(fp, bfh.bfOffBits + i * row_size, SEEK_SET); // seek to the beginning of the current row
-    fread(&image[i * row_size], row_size, 1, fp); // read the current row
+  image = read_pixel_data(fp, &bfh, &bih, image, row_size); // read pixels row by row
+  
+// check for the arguments
+  if(argc == 2) {
+    char answer;
+    printf("Decode steganography? [y/n]\n");
+    scanf("%c", &answer);
+
+    if(answer == 'y') {
+    // decode message
+      if ((bih.biCompression != 0) || (bih.biBitCount != 24)) {
+        printf("Steganography is not supported for this image.");
+        return 1;
+      }
+      decode(image);
+    } else {
+    // histogram
+      if ((bih.biCompression != 0) || (bih.biBitCount != 24)) {
+        printf("Histogram calculation is not supported for this image.");
+        return 1;
+      }
+      print_histogram(&bih, image, row_size);
+    }
+
+  } else if(argc == 3) {
+  // grayscale image
+    grayscale(&bfh, &bih, image, row_size, out);
+  } else {
+  // encode a message
+    if ((bih.biCompression != 0) || (bih.biBitCount != 24)) {
+      printf("Steganography is not supported for this image.");
+      return 1;
+    }
+    encode(&bfh, &bih, image, row_size, out, message);
   }
 
-  fclose(fp);
-
-  print_histogram(&bih, image, row_size);
-
-// grayscale
-  grayscale(&bfh, &bih, image, row_size, out);
-
-
   free(image);
+  fclose(fp);
   
   return 0;
 }
