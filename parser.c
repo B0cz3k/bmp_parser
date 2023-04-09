@@ -191,8 +191,14 @@ void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *imag
 
 void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size, const char *file, char *message) {
   FILE* encoded_file = fopen(file, "wb");
+  
   if(encoded_file == NULL) {
     printf("ERROR: Failed to create encoded file.");
+    return;
+  }
+
+  if(strlen(message) > 255) {
+    printf("ERROR: Given message is too long.");
     return;
   }
 
@@ -223,7 +229,9 @@ void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, 
   } 
   // save changes
   write_pixels(bfh, bih, encoded_file, image, row_size);
+
   printf("Successfully encoded message: %s\n", message);
+  
   free(bin_message);
   fclose(encoded_file);
 }
