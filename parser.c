@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 typedef uint16_t WORD;
 typedef uint32_t DWORD;
@@ -117,6 +118,7 @@ void print_histogram(BITMAPINFOHEADER *bih, unsigned char *image, int row_size) 
       }
     }
   }
+
   for(int i = 0; i < 3; i++) { // printing the intervals and percentages
     printf("%c:\n", colors[i]);
     for(int j = 0; j < 16; j++) {
@@ -163,7 +165,7 @@ void write_pixels(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, FILE *fp, unsign
 void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size, const char *file) {
   FILE* gray_file = fopen(file, "wb");
   if(gray_file == NULL) {
-    printf("Failed to create grayscale image\n");
+    printf("ERROR: Failed to create grayscale image.\n");
     return;
   }
   unsigned char *gray_image = (unsigned char*) malloc(row_size * bih->biHeight); // allocate memory for the grayscale pixels
@@ -180,6 +182,8 @@ void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *imag
   write_info_header(gray_file, bih);
   write_pixels(bfh, bih, gray_file, gray_image, row_size);
 
+  printf("Successfully created a grayscale image.\n");
+
   free(gray_image);
   fclose(gray_file);
 }
@@ -188,10 +192,9 @@ void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *imag
 void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size, const char *file, char *message) {
   FILE* encoded_file = fopen(file, "wb");
   if(encoded_file == NULL) {
-    printf("Failed to create encoded file");
+    printf("ERROR: Failed to create encoded file.");
     return;
   }
-  printf("Message to encode: %s\n", message);
 
 // convert message to binary
   unsigned char *bin_message = (unsigned char*) malloc((strlen(message) + 1) * 8); // allocate space for binary representation of the message WITH ITS SIZE AT THE FRONT
@@ -200,11 +203,12 @@ void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, 
     bin_message[7 - i] = (((int) strlen(message)) >> i) & 1 ? '1' : '0'; // extract individual bits of the binary representation starting from the least significant bit
   }
   for(int i = 1; i <= strlen(message); i++) { // i is for every character inside message
-    int ascii = (int) message[i]; // change character into integer
+    int ascii = (int) message[i-1]; // change character into integer
     for(int j = 7; j >= 0; j--) { // j is for each bit that might encode the character message[i]
       bin_message[(i * 8) + (7 - j)] = (ascii >> j) & 1 ? '1' : '0'; 
     }
   }
+
 // encode the message
   // write the headers
   write_file_header(encoded_file, bfh); 
@@ -212,9 +216,9 @@ void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, 
   
   // modify the pixel values 
   for(int i = 0; i <= strlen(message); i++) {
-    for(int j = 0 ; j < 8; j++) { 
-      image[i + j] &= ~1; // set the least significant bit to zero
-      image[i + j] |= bin_message[(i * 8) + j]; // set the least significant bit
+    for(int j = 0 ; j < 8; j++) {
+      image[(i * 8) + j] &= ~1; // set the least significant bit to zero
+      image[(i * 8) + j] |= (bin_message[(i * 8) + j] == '1') ? 1 : 0; // set the least significant bit
     }
   } 
   // save changes
@@ -225,8 +229,27 @@ void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, 
 }
 
 
-void decode(unsigned char *pixels) {
+void decode(BITMAPINFOHEADER *bih, int row_size, unsigned char *image) {
+// get the size
+  int size = 0;
+  for(int i = 0; i < 8; i++) {
+    size += (pow(2, (7 - i)) * (image[i] & 1)); // get the value of the least significant bit and count the size
+  }
+  printf("Size of the message: %d", size);
 
+// get the message
+  unsigned char *message = (unsigned char*) calloc(size, sizeof(unsigned char)); // allocate space for the message
+  
+  for(int i = 0; i < size; i++) {
+    unsigned int character = 0;
+    for(int j = 0; j < 8; j++) {
+      character += (pow(2, (7 - j)) * (image[8 + (i * 8) + j] & 1)); // decode a single character and then connect it into a whole message
+    }
+    message[i] = (char) character;
+  }
+
+  printf("\nHidden message: %s\n", message);
+  free(message);
 }
 
 
@@ -260,7 +283,7 @@ int main(int argc, char *argv[]) {
 // check for the arguments
   if(argc == 2) {
     char answer;
-    printf("Decode steganography? [y/n]\n");
+    printf("Decode steganography? [y/n]\nAnswer: ");
     scanf("%c", &answer);
 
     if(answer == 'y') {
@@ -269,7 +292,7 @@ int main(int argc, char *argv[]) {
         printf("Steganography is not supported for this image.");
         return 1;
       }
-      decode(image);
+      decode(&bih, row_size, image);
     } else {
     // histogram
       if ((bih.biCompression != 0) || (bih.biBitCount != 24)) {
