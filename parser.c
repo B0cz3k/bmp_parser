@@ -190,15 +190,15 @@ void grayscale(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *imag
 
 
 void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, int row_size, const char *file, char *message) {
+  if(strlen(message) > 255) {
+    printf("ERROR: Given message is too long.");
+    return;
+  }
+
   FILE* encoded_file = fopen(file, "wb");
   
   if(encoded_file == NULL) {
     printf("ERROR: Failed to create encoded file.");
-    return;
-  }
-
-  if(strlen(message) > 255) {
-    printf("ERROR: Given message is too long.");
     return;
   }
 
@@ -208,7 +208,7 @@ void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, 
   for(int i = 7; i >= 0; i--) { // encode the size in bits
     bin_message[7 - i] = (((int) strlen(message)) >> i) & 1 ? '1' : '0'; // extract individual bits of the binary representation starting from the least significant bit
   }
-  for(int i = 1; i <= strlen(message); i++) { // i is for every character inside message
+  for(int i = 1; i <= (int) strlen(message); i++) { // i is for every character inside message
     int ascii = (int) message[i-1]; // change character into integer
     for(int j = 7; j >= 0; j--) { // j is for each bit that might encode the character message[i]
       bin_message[(i * 8) + (7 - j)] = (ascii >> j) & 1 ? '1' : '0'; 
@@ -221,7 +221,7 @@ void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, 
   write_info_header(encoded_file, bih);
   
   // modify the pixel values 
-  for(int i = 0; i <= strlen(message); i++) {
+  for(int i = 0; i <= (int) strlen(message); i++) {
     for(int j = 0 ; j < 8; j++) {
       image[(i * 8) + j] &= ~1; // set the least significant bit to zero
       image[(i * 8) + j] |= (bin_message[(i * 8) + j] == '1') ? 1 : 0; // set the least significant bit
@@ -237,7 +237,7 @@ void encode(BITMAPFILEHEADER *bfh, BITMAPINFOHEADER *bih, unsigned char *image, 
 }
 
 
-void decode(BITMAPINFOHEADER *bih, int row_size, unsigned char *image) {
+void decode(unsigned char *image) {
 // get the size
   int size = 0;
   for(int i = 0; i < 8; i++) {
@@ -300,7 +300,7 @@ int main(int argc, char *argv[]) {
         printf("Steganography is not supported for this image.");
         return 1;
       }
-      decode(&bih, row_size, image);
+      decode(image);
     } else {
     // histogram
       if ((bih.biCompression != 0) || (bih.biBitCount != 24)) {
